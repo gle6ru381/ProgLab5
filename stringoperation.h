@@ -2,7 +2,6 @@
 #define STRINGOPERATION_H
 
 #include "list.h"
-#include <stdbool.h>
 
 uint strLen(char const* const str);
 List* strSplit(char const* const str, char const separator);

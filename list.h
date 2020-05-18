@@ -1,10 +1,13 @@
 #ifndef LIST_H
 #define LIST_H
 
+#include <stdbool.h>
+
 typedef unsigned uint;
 
 struct List {
     char* string;
+    bool win;
     struct List* right;
     struct List* left;
 };

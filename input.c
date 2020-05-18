@@ -6,7 +6,7 @@ List* input()
 {
     FILE* file;
     printf("input file name: ");
-    char name[261];
+    char name[261] = "bdc.txt";
     scanf("%s", name);
     getchar();
     file = fopen(name, "r");
@@ -24,25 +24,36 @@ List* input()
     return strSplit(paths, separator);
 }
 
+void printError(char const* error, char const* path, char const* name)
+{
+    fprintf(stderr, "%s", error);
+    if (name)
+        fprintf(stderr, " %s in path %s", name, path);
+    else
+        fprintf(stderr, " %s", path);
+}
+
+#define shortError(error, path) printError(error, path, NULL)
+
 void check(List* pathList)
 {
-    bool win = false;
     char pathSep;
     for (List* i = pathList; i; i = i->right) {
+        bool absolute = false;
         if (strLen(i->string) > 260) {
-            fprintf(stderr, "too big file path");
+            shortError("too bog file path", i->string);
             exit(EXIT_FAILURE);
         }
         if (strContains(i->string, '/')) {
             if (strContains(i->string, '\\')) {
-                fprintf(stderr, "incorrect path");
+                shortError("incorrect path", i->string);
                 exit(EXIT_FAILURE);
             }
             pathSep = '/';
         }
         if (strContains(i->string, '\\')) {
-            if (strContains(i->string, '/')) {
-                fprintf(stderr, "incorrect path");
+            if (strContains(i->string, '/') || i->string[0] == '\\') {
+                shortError("incorrect path", i->string);
                 exit(EXIT_FAILURE);
             }
             pathSep = '\\';
@@ -50,11 +61,11 @@ void check(List* pathList)
         if (i->string[0] != '/') {
             if (isupper(i->string[0])) {
                 if (i->string[1] == ':' && i->string[2] != '\\') {
-                    fprintf(stderr, "incorrect windows path");
+                    shortError("incorrect windows path", i->string);
                     exit(EXIT_FAILURE);
                 } else {
                     i->string += 2;
-                    win = true;
+                    i->win = true;
                 }
             }
         }
@@ -62,36 +73,53 @@ void check(List* pathList)
             || strContains(i->string, '"') || strContains(i->string, '*')
             || strContains(i->string, '?') || strContains(i->string, '<')
             || strContains(i->string, '>')) {
-            fprintf(stderr, "incorrect path");
+            shortError("incorrect path", i->string);
             exit(EXIT_FAILURE);
         }
         if (strStr(i->string, ".../")->string || strStr(i->string, " /")->string
             || strStr(i->string, "...\\")->string
             || strStr(i->string, " \\")->string) {
-            fprintf(stderr, "incorrecr path");
+            shortError("incorrecr path", i->string);
             exit(EXIT_FAILURE);
         }
+
+        if (i->string[0] == pathSep) {
+            absolute = true;
+            i->string++;
+        }
+
         List* nameList = strSplit(i->string, pathSep);
         for (List* name = nameList; name; name = name->right) {
             if (strLen(name->string) == 0) {
-                fprintf(stderr, "incorrect dir");
-                exit(EXIT_FAILURE);
+                if (name->right || !strCmp(name->left->string, "..")) {
+                    printError("incorrect dir", i->string, name->string);
+                    exit(EXIT_FAILURE);
+                } else
+                    continue;
             }
             if (isalpha(name->string[0])
-                && name->string[strLen(name->string) - 1] == '.') {
-                fprintf(stderr, "name end with dot");
+                && name->string[strLen(name->string) - 1] == '.'
+                && !strCmp(name->string, "..")) {
+                printError("name end with dot", i->string, name->string);
                 exit(EXIT_FAILURE);
             }
         }
-        if (win) {
+        if (i->win) {
             i->string -= 2;
+        }
+        if (absolute) {
+            i->string--;
         }
     }
 }
 
-char* removeDotDot(char* string, char pathSep)
+char* removeDotDot(char* string, char pathSep, bool win)
 {
     char* substr = pathSep == '/' ? "/../" : "\\..\\";
+    char const* temp = strCpy(string);
+    if (win) {
+        string += 2;
+    }
 
     for (uint i = 0; string[i]; i++) {
         if (string[i] == *substr) {
@@ -104,13 +132,22 @@ char* removeDotDot(char* string, char pathSep)
                 }
             }
             if (flag) {
-                i -= 2;
+                if (i == 0) {
+                    shortError("root directory exit", temp);
+                    exit(EXIT_FAILURE);
+                }
+                i -= 1;
                 while (string[i] != pathSep && i != 0) {
                     i--;
                 }
                 strRemove(string, string + i, string + j - 2);
+                i--;
             }
         }
+    }
+
+    if (win) {
+        string -= 2;
     }
     return string;
 }
@@ -118,9 +155,38 @@ char* removeDotDot(char* string, char pathSep)
 void process(List* pathList)
 {
     for (List* i = pathList; i; i = i->right) {
-        i->string = removeDotDot(i->string, '/');
-        i->string = removeDotDot(i->string, '\\');
-        i->string = strReplace(i->string, "./");
-        i->string = strReplace(i->string, ".\\");
+        char pathSep;
+        if (strContains(i->string, '/')) {
+            pathSep = '/';
+            i->string = removeDotDot(i->string, '/', false);
+            i->string = strReplace(i->string, "./");
+        } else {
+            pathSep = '\\';
+            i->string = removeDotDot(i->string, '\\', i->win);
+            i->string = strReplace(i->string, ".\\");
+        }
+        uint length = strLen(i->string);
+        if (i->string[length - 1] == '.') {
+            if (i->win) {
+                i->string += 2;
+                length -= 2;
+            }
+            uint end = length - 1;
+            uint begin = end - 3;
+            if (begin <= 0) {
+                shortError("incorrect path", "?");
+                exit(EXIT_FAILURE);
+            }
+            while (begin != 1) {
+                if (i->string[begin] == pathSep) {
+                    break;
+                }
+                begin--;
+            }
+            strRemove(i->string, i->string + begin, i->string + end);
+            if (i->win) {
+                i->string -= 2;
+            }
+        }
     }
 }

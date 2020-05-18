@@ -74,6 +74,9 @@ List* strStr(char const* const string, char const* const substr)
 
 bool strCmp(char const* const str1, char const* const str2)
 {
+    if (!str1 || !str2) {
+        return false;
+    }
     for (uint i = 0; str1[i] || str2[i]; i++) {
         if (str1[i] != str2[i])
             return false;
